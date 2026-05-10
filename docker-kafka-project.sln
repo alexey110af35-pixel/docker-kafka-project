@@ -1,0 +1,50 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.37012.4
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TransactionAPI", "TransactionAPI\TransactionAPI.csproj", "{1358221D-1163-43D6-8CEF-BC873085D267}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TransactionProcessor", "TransactionProcessor\TransactionProcessor.csproj", "{80BEAEB8-7BB0-46EB-8D1E-454C2248F1B2}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Shared", "Shared", "{36D591C7-65C7-A0D1-1CBC-10CDE441BDC8}"
+	ProjectSection(SolutionItems) = preProject
+		docker-cleanup.ps1 = docker-cleanup.ps1
+		docker-compose.yml = docker-compose.yml
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Models", "Models", "{2B8438DC-EC8A-425D-9D02-BF79836262AA}"
+	ProjectSection(SolutionItems) = preProject
+		KafkaEvent.cs = KafkaEvent.cs
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Элементы решения", "Элементы решения", "{754FC069-D67B-A9D7-50A1-8D1CA196D8F1}"
+	ProjectSection(SolutionItems) = preProject
+		readme.md = readme.md
+	EndProjectSection
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{1358221D-1163-43D6-8CEF-BC873085D267}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1358221D-1163-43D6-8CEF-BC873085D267}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1358221D-1163-43D6-8CEF-BC873085D267}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1358221D-1163-43D6-8CEF-BC873085D267}.Release|Any CPU.Build.0 = Release|Any CPU
+		{80BEAEB8-7BB0-46EB-8D1E-454C2248F1B2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{80BEAEB8-7BB0-46EB-8D1E-454C2248F1B2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{80BEAEB8-7BB0-46EB-8D1E-454C2248F1B2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{80BEAEB8-7BB0-46EB-8D1E-454C2248F1B2}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{2B8438DC-EC8A-425D-9D02-BF79836262AA} = {36D591C7-65C7-A0D1-1CBC-10CDE441BDC8}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {B52C3CD6-CD5D-4EC2-8B99-28F56DA26699}
+	EndGlobalSection
+EndGlobal

@@ -7,4 +7,4 @@
 /TransactionAPI/obj
 /TransactionProcessor/bin
 /TransactionProcessor/obj
-/TransactionAPI/appsettings.Development.json
+/*/appsettings.Development.json
