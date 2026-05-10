@@ -16,7 +16,7 @@ public class TransactionService
         _dbContextFactory = dbContextFactory;
     }
 
-    public async Task ProcessTransactionEventAsync(KafkaEvent kafkaEvent)
+    public async Task<bool> ProcessTransactionEventAsync(KafkaEvent kafkaEvent)
     {
         await using var context = await _dbContextFactory.CreateDbContextAsync();
 
@@ -45,14 +45,18 @@ public class TransactionService
 
                 await dbTransaction.CommitAsync();
                 _logger.LogInformation($"✅ Successfully processed {kafkaEvent.EventType} for {kafkaEvent.TransactionId}");
+
+                return true;
             }
             catch (Exception ex)
             {
                 await dbTransaction.RollbackAsync();
                 _logger.LogError(ex, $"❌ Failed to process event for transaction {kafkaEvent.TransactionId}");
-                throw;
+                throw;                
             }
         });
+
+        return false;
     }
 
     private async Task HandleTransactionStartAsync(TransactionDbContext context, KafkaEvent kafkaEvent)

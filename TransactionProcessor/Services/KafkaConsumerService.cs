@@ -49,7 +49,7 @@ namespace TransactionProcessor.Services
                 BootstrapServers = bootstrapServers,
                 GroupId = _groupId,
                 AutoOffsetReset = AutoOffsetReset.Earliest,
-                EnableAutoCommit = true,
+                EnableAutoCommit = false,
                 AutoCommitIntervalMs = 5000,
                 SessionTimeoutMs = 6000,
                 MaxPollIntervalMs = 300000,
@@ -92,7 +92,13 @@ namespace TransactionProcessor.Services
                                 {
                                     using var scope = _scopeFactory.CreateScope();
                                     var transactionService = scope.ServiceProvider.GetRequiredService<TransactionService>();
-                                    await transactionService.ProcessTransactionEventAsync(kafkaEvent);
+                                    var succcess = await transactionService.ProcessTransactionEventAsync(kafkaEvent);
+
+                                    if (succcess)
+                                    {
+                                        _consumer.Commit(consumeResult);
+                                    }
+
                                 }, stoppingToken);
                             }
                         }
