@@ -5,6 +5,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.WebHost.UseUrls("http://*:5000");
 
 // Регистрируем сервис как Singleton
 builder.Services.AddSingleton<KafkaProducerService>();

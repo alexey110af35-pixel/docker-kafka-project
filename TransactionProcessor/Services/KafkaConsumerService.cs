@@ -1,50 +1,33 @@
-﻿using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Configuration;
-using Confluent.Kafka;
+﻿using Confluent.Kafka;
 using System.Text.Json;
-using System;
-using System.Threading;
-using System.Threading.Tasks;
 using TransactionProcessor.Models;
 
 namespace TransactionProcessor.Services
 {
-    // Убираем дублирование - используем тот же класс, что и в TransactionService
-    // Если класс уже определен в TransactionService, удалите его отсюда
-
     public class KafkaConsumerService : BackgroundService
     {
         private readonly ILogger<KafkaConsumerService> _logger;
         private readonly IServiceScopeFactory _scopeFactory;
-        private readonly IConfiguration _configuration;
-        private IConsumer<string, string>? _consumer;
+        private readonly IConsumer<string, string> _consumer;
+        private readonly IProducer<string, string> _dlqProducer;
         private readonly string _topic;
+        private readonly string _retryTopic;
         private readonly string _groupId;
 
         public KafkaConsumerService(
             ILogger<KafkaConsumerService> logger,
             IServiceScopeFactory scopeFactory,
-            IConfiguration configuration)
+            IConfiguration config)
         {
             _logger = logger;
             _scopeFactory = scopeFactory;
-            _configuration = configuration;
-            _topic = _configuration["Kafka:Topic"] ?? "transactions";
-            _groupId = _configuration["Kafka:GroupId"] ?? "transaction-processor-group";
-        }
+            _topic = config["Kafka:Topic"] ?? "transactions";
+            _retryTopic = config["Kafka:Topic"] ?? "transactions-retry";
+            _groupId = config["Kafka:GroupId"] ?? "transaction-processor-group";
 
-        protected override Task ExecuteAsync(CancellationToken stoppingToken)
-        {
-            return Task.Run(() => StartConsumer(stoppingToken), stoppingToken);
-        }
+            var bootstrapServers = config["Kafka:BootstrapServers"] ?? "localhost:9092";
 
-        private void StartConsumer(CancellationToken stoppingToken)
-        {
-            var bootstrapServers = _configuration["Kafka:BootstrapServers"] ?? "localhost:9092";
-
-            var config = new ConsumerConfig
+            var consumerConfig = new ConsumerConfig
             {
                 BootstrapServers = bootstrapServers,
                 GroupId = _groupId,
@@ -55,12 +38,22 @@ namespace TransactionProcessor.Services
                 MaxPollIntervalMs = 300000,
                 StatisticsIntervalMs = 60000
             };
+            var producerConfig = new ProducerConfig
+            {
+                BootstrapServers = config["Kafka:BootstrapServers"]
+            };
 
-            _consumer = new ConsumerBuilder<string, string>(config)
+
+            _consumer = new ConsumerBuilder<string, string>(consumerConfig)
                 .SetErrorHandler((_, e) => _logger.LogError($"Kafka error: {e.Reason}"))
                 .SetStatisticsHandler((_, json) => _logger.LogDebug($"Kafka stats: {json}"))
                 .Build();
 
+            _dlqProducer = new ProducerBuilder<string, string>(producerConfig).Build();
+        }
+
+        protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+        {
             try
             {
                 _consumer.Subscribe(_topic);
@@ -80,27 +73,43 @@ namespace TransactionProcessor.Services
                     {
                         var consumeResult = _consumer.Consume(stoppingToken);
 
-                        if (consumeResult?.Message?.Value != null)
+                        if ((consumeResult?.Message?.Value) == null)
+                            continue;
+
+                        _logger.LogInformation($"📨 Received message from partition {consumeResult.Partition}");
+
+                        // Десериализуем в KafkaEvent
+                        var kafkaEvent = JsonSerializer.Deserialize<KafkaEvent>(consumeResult.Message.Value);
+
+                        if (kafkaEvent == null)
+                            continue;
+
+                        using var scope = _scopeFactory.CreateScope();
+                        var transactionService = scope.ServiceProvider.GetRequiredService<TransactionService>();
+
+                        bool success = false;
+
+                        try
                         {
-                            _logger.LogInformation($"📨 Received message from partition {consumeResult.Partition}");
+                            var succcess = await transactionService.ProcessTransactionEventAsync(kafkaEvent);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "Error processing transaction");
+                            success = false;
+                        }
 
-                            // Десериализуем в KafkaEvent
-                            var kafkaEvent = JsonSerializer.Deserialize<KafkaEvent>(consumeResult.Message.Value);
-                            if (kafkaEvent != null)
-                            {
-                                _ = Task.Run(async () =>
-                                {
-                                    using var scope = _scopeFactory.CreateScope();
-                                    var transactionService = scope.ServiceProvider.GetRequiredService<TransactionService>();
-                                    var succcess = await transactionService.ProcessTransactionEventAsync(kafkaEvent);
-
-                                    if (succcess)
-                                    {
-                                        _consumer.Commit(consumeResult);
-                                    }
-
-                                }, stoppingToken);
-                            }
+                        if (success)
+                        {
+                            _consumer.Commit(consumeResult);
+                            _logger.LogInformation("Transaction processed and committed");
+                        }
+                        else
+                        {
+                            // Отправляем в retry-топик с задержкой 5 секунд
+                            await SendToRetryTopic(consumeResult, delaySeconds: 5);
+                            _consumer.Commit(consumeResult); // Коммитим оригинал
+                            _logger.LogWarning("Message sent to retry topic, will be processed in 5 seconds");
                         }
                     }
                     catch (ConsumeException ex)
@@ -124,6 +133,18 @@ namespace TransactionProcessor.Services
                 _consumer?.Close();
                 _consumer?.Dispose();
             }
+        }
+
+        private async Task SendToRetryTopic(ConsumeResult<string, string> result, int delaySeconds)
+        {
+            var futureTimestamp = new Timestamp(DateTime.UtcNow.AddSeconds(delaySeconds));
+
+            await _dlqProducer.ProduceAsync(_retryTopic, new Message<string, string>
+            {
+                Key = result.Message.Key,
+                Value = result.Message.Value,
+                Timestamp = futureTimestamp
+            });
         }
 
         public override async Task StopAsync(CancellationToken stoppingToken)

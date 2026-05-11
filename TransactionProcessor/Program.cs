@@ -5,6 +5,7 @@ using TransactionProcessor.Services;
 var builder = Host.CreateApplicationBuilder(args);
 
 builder.Services.AddHostedService<KafkaConsumerService>();
+builder.Services.AddHostedService<RetryTopicConsumer>();
 builder.Services.AddScoped<TransactionService>();
 
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")

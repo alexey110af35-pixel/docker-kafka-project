@@ -23,6 +23,11 @@
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    healthcheck:
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - kafka-net
 
@@ -52,10 +57,10 @@
       kafka:
         condition: service_started
     ports:
-      - "5000:8080"
+      - "5000:5000"
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
-      - ASPNETCORE_URLS=http://+:8080
+      #- ASPNETCORE_URLS=http://+:8080
       - Kafka__BootstrapServers=kafka:9092
       - Kafka__Topic=transactions
     networks:
