@@ -19,7 +19,7 @@ COPY --from=build /app/publish .
 
 # Копируем конфигурацию принудительно
 COPY --from=build /src/appsettings.json .
-COPY --from=build /src/appsettings.Development.json .
+#COPY --from=build /src/appsettings.Development.json .
 
 # Переопределяем переменные окружения
 ENV ASPNETCORE_ENVIRONMENT=Development
