@@ -1,6 +1,5 @@
 ﻿namespace TransactionProcessor.Models;
 
-// Выносим модель в отдельный файл в папке Models
 public class KafkaEvent
 {
     public string EventType { get; set; } = string.Empty;

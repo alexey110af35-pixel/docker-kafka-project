@@ -47,15 +47,13 @@ bash
 curl http://localhost:5000/health
 
 # Создать транзакцию
-curl -X POST http://localhost:5000/api/transaction/start \
-  -H "Content-Type: application/json" \
-  -d '{"amount": 1000, "currency": "RUB"}'
+$body = '{"amount": 1000, "currency": "RUB"}'
+Invoke-RestMethod -Uri "http://localhost:5000/api/transaction/start" -Method POST -Body $body -ContentType "application/json"
 
 # Остановить транзакцию (используйте полученный ID)
-curl -X POST http://localhost:5000/api/transaction/stop/{transactionId} \
-  -H "Content-Type: application/json" \
-  -d '{"reason": "completed"}'
 
+$body = '{"reason": "completed"}'
+Invoke-RestMethod -Uri "http://localhost:5000/api/transaction/stop/{transactionId}" -Method POST -Body $body -ContentType "application/json"
 
 📚 Полное руководство по командам
 

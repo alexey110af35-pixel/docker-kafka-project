@@ -55,7 +55,7 @@
     container_name: transaction-api
     depends_on:
       kafka:
-        condition: service_started
+        condition: service_healthy
     ports:
       - "5000:5000"
     environment:
@@ -71,7 +71,7 @@
     container_name: transaction-processor
     depends_on:
       kafka:
-        condition: service_started
+        condition: service_healthy
       postgres:
         condition: service_healthy
     environment:

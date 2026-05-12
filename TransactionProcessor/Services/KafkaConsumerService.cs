@@ -1,7 +1,6 @@
 ﻿using Confluent.Kafka;
 using System.Text.Json;
 using TransactionProcessor.Models;
-using static Confluent.Kafka.ConfigPropertyNames;
 
 namespace TransactionProcessor.Services
 {
@@ -10,10 +9,12 @@ namespace TransactionProcessor.Services
 		private readonly ILogger<KafkaConsumerService> _logger;
 		private readonly IServiceScopeFactory _scopeFactory;
 		private readonly IConsumer<string, string> _consumer;
+		private readonly IProducer<string, string> _retryProducer;
 		private readonly IProducer<string, string> _dlqProducer;
 		private readonly Dictionary<string, int> _retryCount = new();
 		private readonly string _topic;
 		private readonly string _retryTopic;
+		private readonly string _dlqTopic;
 		private readonly string _groupId;
 
 		public KafkaConsumerService(
@@ -25,6 +26,7 @@ namespace TransactionProcessor.Services
 			_scopeFactory = scopeFactory;
 			_topic = config["Kafka:Topic"] ?? "transactions";
 			_retryTopic = config["Kafka:Topic"] ?? "transactions-retry";
+			_dlqTopic = config["Kafka:Topic"] ?? "transactions-dlq";
 			_groupId = config["Kafka:GroupId"] ?? "transaction-processor-group";
 
 			var consumerConfig = new ConsumerConfig
@@ -39,16 +41,19 @@ namespace TransactionProcessor.Services
 				StatisticsIntervalMs = 60000
 			};
 
-			var producerConfig = new ProducerConfig
-			{
-				BootstrapServers = config["Kafka:BootstrapServers"]
-			};
+
 
 			_consumer = new ConsumerBuilder<string, string>(consumerConfig)
 				.SetErrorHandler((_, e) => _logger.LogError($"Kafka error: {e.Reason}"))
 				.SetStatisticsHandler((_, json) => _logger.LogDebug($"Kafka stats: {json}"))
 				.Build();
 
+			var producerConfig = new ProducerConfig
+			{
+				BootstrapServers = config["Kafka:BootstrapServers"]
+			};
+
+			_retryProducer = new ProducerBuilder<string, string>(producerConfig).Build();
 			_dlqProducer = new ProducerBuilder<string, string>(producerConfig).Build();
 		}
 
@@ -78,6 +83,9 @@ namespace TransactionProcessor.Services
 
 						_logger.LogInformation($"📨 Received message from partition {consumeResult.Partition}");
 
+						if (await IsSkipRetryByTimeout(consumeResult))
+							continue;
+
 						// Десериализуем в KafkaEvent
 						var kafkaEvent = JsonSerializer.Deserialize<KafkaEvent>(consumeResult.Message.Value);
 
@@ -91,7 +99,7 @@ namespace TransactionProcessor.Services
 
 						try
 						{
-							var succcess = await transactionService.ProcessTransactionEventAsync(kafkaEvent);
+							success = await transactionService.ProcessTransactionEventAsync(kafkaEvent);
 						}
 						catch (Exception ex)
 						{
@@ -101,8 +109,20 @@ namespace TransactionProcessor.Services
 
 						if (success)
 						{
-							_consumer.Commit(consumeResult);
-							_logger.LogInformation("Transaction processed and committed");
+							// Проверяем, что consumer не уничтожен
+							if (!stoppingToken.IsCancellationRequested && _consumer != null)
+							{
+								try
+								{
+									_consumer.Commit(consumeResult);
+									_logger.LogInformation("Transaction processed and committed");
+								}
+								catch (ObjectDisposedException)
+								{
+									_logger.LogWarning("Consumer was disposed, cannot commit");
+								}
+							}
+
 							_retryCount.Remove(GetMessageKey(consumeResult));
 						}
 						else
@@ -149,6 +169,30 @@ namespace TransactionProcessor.Services
 			}
 		}
 
+		private async Task<bool> IsSkipRetryByTimeout(ConsumeResult<string, string> consumeResult)
+		{
+			if (consumeResult.Topic != _retryTopic)
+				return false;
+
+			var timestamp = consumeResult.Message.Timestamp.UnixTimestampMs;
+			var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+			if (timestamp <= now)
+				return false;
+
+			// Ещё не время — возвращаем обратно
+			await _retryProducer.ProduceAsync(_retryTopic, new Message<string, string>
+			{
+				Key = consumeResult.Message.Key,
+				Value = consumeResult.Message.Value,
+				Timestamp = consumeResult.Message.Timestamp
+			});
+
+			_consumer.Commit(consumeResult);
+
+			return true;
+		}
+
 		// Метод для отправки в DLQ
 		private async Task SendToDeadLetterQueue(ConsumeResult<string, string> result, string reason)
 		{
@@ -162,7 +206,7 @@ namespace TransactionProcessor.Services
 				FailureReason = reason
 			};
 
-			await _dlqProducer.ProduceAsync("transactions-dlq", new Message<string, string>
+			await _dlqProducer.ProduceAsync(_dlqTopic, new Message<string, string>
 			{
 				Key = result.Message.Key,
 				Value = JsonSerializer.Serialize(dlqMessage)
@@ -180,7 +224,7 @@ namespace TransactionProcessor.Services
 		{
 			var futureTimestamp = new Timestamp(DateTime.UtcNow.AddSeconds(delaySeconds));
 
-			await _dlqProducer.ProduceAsync(_retryTopic, new Message<string, string>
+			await _retryProducer.ProduceAsync(_retryTopic, new Message<string, string>
 			{
 				Key = result.Message.Key,
 				Value = result.Message.Value,
@@ -191,7 +235,15 @@ namespace TransactionProcessor.Services
 		public override async Task StopAsync(CancellationToken stoppingToken)
 		{
 			_logger.LogInformation("Stopping Kafka consumer...");
-			_consumer?.Close();
+			try
+			{
+				_consumer?.Close();
+			}
+			catch (Exception ex)
+			{
+				_logger.LogError(ex, "Error closing consumer");
+			}
+
 			await base.StopAsync(stoppingToken);
 		}
 	}

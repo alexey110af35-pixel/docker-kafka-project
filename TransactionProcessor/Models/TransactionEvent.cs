@@ -20,6 +20,9 @@ public class TransactionEvent
     [Column("event_time")]
     public DateTime EventTime { get; set; } = DateTime.UtcNow;
 
-    [ForeignKey("TransactionId")]
+	[Column("transaction_id_fk")]  // новое поле
+	public int TransactionFk { get; set; }  // ← ссылается на Transaction.Id
+
+	[ForeignKey("transaction_id_fk")]
     public virtual Transaction? Transaction { get; set; }
 }
